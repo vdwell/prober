@@ -1,4 +1,5 @@
-#!/home/lab/prober/venv/bin/python3
+#! /usr/bin/python3
+
 import asyncio
 from typing import Any
 import time
@@ -12,7 +13,7 @@ async def run_command(cmd)->int:
 
     stdout, stderr = await proc.communicate()
 
-    print(f'[{cmd!r} exited with {proc.returncode} at {influxdb_timestamp} time]')
+    # print(f'[{cmd!r} exited with {proc.returncode} at {influxdb_timestamp} time]')
     # if stdout:
     #     print(f'[stdout]\n{stdout.decode()}')
     # if stderr:
