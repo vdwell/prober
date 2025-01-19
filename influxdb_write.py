@@ -1,4 +1,4 @@
-#!/home/lab/prober/venv/bin/python3
+#! usr/bin/python3
 
 import requests
 import time
@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 def write_influxdb_value(tag:str, field:str, value:int, influxdb_api_token:str)->int:
-    url: str = 'http://172.17.0.2:8086/api/v2/write?org=lab&bucket=icmp_probes&precision=ns'
+    # influxdb_api_token: str = 'VmP9i7ec7OvFQta-D0O4Mv7pRqEFO4pLzHz8EbsF9Erc5mDlrIvqEKV_c6qccljQKNB6sNc3Vt6pFcbSO-O7OQ=='
+    url: str = 'http://172.18.0.11:8086/api/v2/write?org=lab&bucket=icmp_probes&precision=ns'
 
     headers: dict[str] = {'Content-Type': 'text/plain',
             'Accept': 'application/json',
@@ -27,7 +28,7 @@ def write_influxdb_value(tag:str, field:str, value:int, influxdb_api_token:str)-
 
 def write_influxdb_bulk(influxdb_bulk_data: list[list[str|int]], influxdb_api_token: str)->int:
     # influxdb_api_token: str = 'VmP9i7ec7OvFQta-D0O4Mv7pRqEFO4pLzHz8EbsF9Erc5mDlrIvqEKV_c6qccljQKNB6sNc3Vt6pFcbSO-O7OQ=='
-    url: str = 'http://172.17.0.2:8086/api/v2/write?org=lab&bucket=icmp_probes&precision=ns'
+    url: str = 'http://172.18.0.11:8086/api/v2/write?org=lab&bucket=icmp_probes&precision=ns'
 
     headers: dict[str] = {'Content-Type': 'text/plain',
             'Accept': 'application/json',
@@ -39,7 +40,7 @@ def write_influxdb_bulk(influxdb_bulk_data: list[list[str|int]], influxdb_api_to
             data += '\n'
 
     response = requests.post(url=url, headers=headers, data=data)
-    logger.info(f'(len(influxdb_bulk_data) entries have been sent to InfluxDB, response code is {response.status_code})')
+    logger.info(f'{len(influxdb_bulk_data)} entries have been sent to InfluxDB, response code is {response.status_code}')
     return response.status_code
 
 
