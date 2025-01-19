@@ -1,39 +1,65 @@
-#!/home/lab/prober/venv/bin/python3
+#! /usr/bin/python3
 
 import asyncio
-from run_ping import *
-from influxdb_write import *
+import run_ping
+import influxdb_write
+import yaml2config
+import os
+from typing import Any
+from classes import Host
+import time
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 
-input_data:list[list[str]] = [['vrf0', '10.0.1.1'],
-                              ['vrf0', '10.0.10.1'],
-                              ['vrf0', '10.0.11.1'],
-                              ['vrf0', '10.0.12.1'],
-                              ['vrf0', '10.0.13.1'],
-                              ['vrf0', '10.0.14.1'],
-                              ['vrf0', '10.0.15.1'],]
-
-
+def check_all_success(complex_list: list[tuple[int|str]])->bool:
+    worklist:list[int] = []
+    for item in complex_list:
+        worklist.append(item[0])
+    return not any(worklist)    
 
 
 async def main()->None:
 
+    logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("application.log"),
+        # logging.StreamHandler()  # Optionally log to console as well
+    ])
+    logger = logging.getLogger(__name__)
+    logger.info("Starting the main application")
+
+    filename = 'hosts.yml'
+    yaml_dict = yaml2config.yaml2dict(filename)
+    host_objects:list[Host] = yaml2config.yamldata2dataclass(yaml_dict)
+    iproute2_config:str = yaml2config.generate_iproute2_config(host_objects)
+    yaml2config.string2file(iproute2_config, 'iproute2_config.txt')
+
+    ping_commands: list[str] = yaml2config.generate_ping_commands(host_objects)
+    print(ping_commands)
+
     influxdb_api_token = os.environ.get("INFLUXDB_TOKEN")
+
 
     while True:
 
         commands:list[Any] = []
-        for i in range(len(input_data)):
-            command_parameters = f'ping -I {input_data[i][0]} {input_data[i][1]} -c 1 -w 1'
-            commands.append(run_command(command_parameters))
+        for i in range(len(ping_commands)):
+            # print(ping_commands[i])
+            # command_parameters = f'ping -I {input_data[i][0]} {input_data[i][1]} -c 1 -w 1'
+            commands.append(run_ping.run_command(ping_commands[i][0]))
         ping_result = await asyncio.gather(*commands)
-        print(type(ping_result))
-        for item in ping_result:
-            print(item)
+        # print(type(ping_result))
+        # for item in ping_result:
+        #     print(item)
 
         influxdb_write_data:list[list[str|int]] = []
-        for i in range(len(input_data)):
+        for i in range(len(ping_commands)):
             worklist:list = []
             command_result_value: int = -1
             if ping_result[i][0] == 0:
@@ -42,19 +68,22 @@ async def main()->None:
                 command_result_value = 0
             else:
                 assert False, "Unexpected return code"    
-            worklist.append('natgw')
-            worklist.append(input_data[i][0])
-            worklist.append(input_data[i][1])
+            worklist.append(ping_commands[i][4])
+            worklist.append(f'From_{ping_commands[i][1]}#{ping_commands[i][2]}')
+            worklist.append(f'To_{ping_commands[i][3]}')
             worklist.append(command_result_value)
             worklist.append(ping_result[i][1])
             influxdb_write_data.append(worklist)
 
-        print(influxdb_write_data)
+        # print(influxdb_write_data)
+        logger.info(f'Data to write to InfluxDB: {influxdb_write_data}')
 
-        response_status_code = write_influxdb_bulk(influxdb_write_data, influxdb_api_token)
-        print(response_status_code)
+        response_status_code = influxdb_write.write_influxdb_bulk(influxdb_write_data, influxdb_api_token)
+        # print(response_status_code)
+        # logger.info(f'InfuxDB REST API response code is {response_status_code}')
 
-    return
+        if check_all_success(ping_result):
+            time.sleep(1)
 
 
 if __name__ == '__main__':
