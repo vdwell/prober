@@ -17,6 +17,7 @@ def yaml2dict(filename:str)->dict:
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
     logger.info("Successfully generated dictionary object from yaml config file")
+    print(yaml_dict)
     return yaml_dict    
 
 
@@ -26,34 +27,35 @@ def yamldata2dataclass(yaml_dict:dict[Any])->list[Host]:
     for project in yaml_dict['projects']:
         for k, project_dict in project.items():
             for host in project_dict:
-                # print(host['host']['vlan'])
-            # print (k)
-            # print(v)
-            # print('-' * 50)
+                # print(host)
+                # print (k)
+                # print(v)
+                # print('-' * 50)
                 host_object = Host(project = k,
-                                vlan = int(host['host']['vlan']), 
-                                site = host['host']['site'],
-                                alias = host['host']['alias'],
-                                ipv4addr = host['host']['ipv4addr'],
-                                ipv4gw = host['host']['ipv4gw'],
-                                ipv6addr = host['host']['ipv6addr'],
-                                ipv6gw = host['host']['ipv6gw'],
-                                pings = host['host']['pings'])
+                                vlan = int(host.get('host').get('vlan')), 
+                                site = host.get('host').get('site'),
+                                alias = host.get('host').get('alias'),
+                                ipv4addr = host.get('host').get('ipv4addr'),
+                                ipv4gw = host.get('host').get('ipv4gw'),
+                                ipv6addr = host.get('host').get('ipv6addr'),
+                                ipv6gw = host.get('host').get('ipv6gw'),
+                                pings = host.get('host').get('pings'))
                 # print(host_object)
                 host_objects.append(host_object)
     return host_objects
 
 
 
-def generate_iproute2_config(host_objects:list[Host], main_int_a: str = 'ens33')->str:
-    
+
+def generate_iproute2_config(host_objects:list[Host], main_int_a: str = 'ens160', main_int_b: str = 'ens180')->str:
+    logger.info("Generating iproute2 configuration")
     iproute2_config: str = ''
     iproute2_config += f'sudo ip link set dev {main_int_a} up\n'
     for obj in host_objects:
         if obj.site == 'a':
             main_int = main_int_a
         elif obj.site == 'b':
-            assert False, 'wrong value'
+            main_int = main_int_b
         else:
             assert False, 'wrong value'      
         iproute2_config += f'sudo ip link add vrf{obj.vlan} type vrf table {obj.vlan}\n'
@@ -61,12 +63,21 @@ def generate_iproute2_config(host_objects:list[Host], main_int_a: str = 'ens33')
         iproute2_config += f'sudo ip link add link {main_int} name {main_int}.{obj.vlan} type vlan id {obj.vlan}\n'
         iproute2_config += f'sudo ip link set dev {main_int}.{obj.vlan} up\n'
         iproute2_config += f'sudo ip link set dev {main_int}.{obj.vlan} master vrf{obj.vlan}\n'
-        for ipv4_address in obj.ipv4addr:
-            iproute2_config += f'sudo ip addr add {ipv4_address} dev {main_int}.{obj.vlan}\n'
-        iproute2_config += f'sudo ip route add 0.0.0.0/0 via {obj.ipv4gw} vrf vrf{obj.vlan}\n'
-        for ipv6_address in obj.ipv6addr:
-            iproute2_config += f'sudo ip -6 addr add {ipv6_address} dev {main_int}.{obj.vlan}\n'
-        iproute2_config += f'sudo ip -6 route add ::/0 via {obj.ipv6gw} vrf vrf{obj.vlan}\n'
+        if obj.ipv4addr is not None and len(obj.ipv4addr) > 0:
+            logger.info("Generation iproute2 config for ipv4 af")
+            for ipv4_address in obj.ipv4addr:
+                iproute2_config += f'sudo ip addr add {ipv4_address} dev {main_int}.{obj.vlan}\n'
+            iproute2_config += f'sudo ip route add 0.0.0.0/0 via {obj.ipv4gw} vrf vrf{obj.vlan}\n'
+        else:
+            logger.info("ipv4 yaml configuration was not detected, nothing to generate for ipv4 af")
+
+        if obj.ipv6addr is not None and len(obj.ipv6addr) > 0:
+            logger.info("Generation iproute2 config for ipv4 af")
+            for ipv6_address in obj.ipv6addr:
+                iproute2_config += f'sudo ip -6 addr add {ipv6_address} dev {main_int}.{obj.vlan}\n'
+            iproute2_config += f'sudo ip -6 route add ::/0 via {obj.ipv6gw} vrf vrf{obj.vlan}\n'
+        else:
+            logger.info("ipv6 yaml configuration was not detected, nothing to generate for ipv4 af")    
     logger.info("iproute2 config was generated and saved in iproute2_config.txt")
     return iproute2_config    
 
@@ -80,11 +91,12 @@ def string2file(text:str, filename:str)->None:
 
 
 def generate_ping_commands(host_objects:list[Host])->list[list[str]]:
+    logger.info("Generating ping commands")
     ping_commands:list[list[str]] = []
     for obj in host_objects:
         for dst in obj.pings:
             # worklist:list[str] = []
-            if '.' in dst:
+            if '.' in dst and obj.ipv4addr is not None and len(obj.ipv4addr) > 0:
                 #this is ipv4
                 for obj_ipv4_address in obj.ipv4addr:
                     worklist:list[str] = []
@@ -96,7 +108,7 @@ def generate_ping_commands(host_objects:list[Host])->list[list[str]]:
                     worklist.append(obj.project)
                     ping_commands.append(worklist)
 
-            elif ':' in dst:
+            elif ':' in dst and obj.ipv6addr is not None and len(obj.ipv6addr) > 0:
                 #this is ipv6
                 for obj_ipv6_address in obj.ipv6addr:
                     worklist:list[str] = []
@@ -108,7 +120,7 @@ def generate_ping_commands(host_objects:list[Host])->list[list[str]]:
                     worklist.append(obj.project)
                     ping_commands.append(worklist)
             else:
-                assert False, 'wrong value'
+                logger.info(f"skip generating ping command for dst {dst}")
     return ping_commands
 
 
